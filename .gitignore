@@ -1,0 +1,12 @@
+# Build
+bin/
+obj/
+
+# Τοπικά δεδομένα: βάση με τα scans και κλειδιά κρυπτογράφησης. ΠΟΤΕ στο git.
+data/
+
+# Editors / OS
+.vs/
+.vscode/
+*.user
+.DS_Store

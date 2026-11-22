@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gitleaks Scanner</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #667085; --border: #e3e6ea;
+    --accent: #2f6fed; --danger: #d92d20; --ok: #12b76a; --warn: #dc6803; --code: #f1f3f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1218; --card: #171b23; --text: #e6e9ef; --muted: #98a2b3; --border: #2a303b;
+            --accent: #5b8cff; --danger: #f97066; --ok: #32d583; --warn: #fdb022; --code: #222833; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  a { color: var(--accent); }
+  .layout { max-width: 1240px; margin: 0 auto; padding: 32px 16px; display: grid; grid-template-columns: 280px 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+  header { grid-column: 1 / -1; }
+  h1 { margin: 0 0 4px; font-size: 26px; }
+  h2 { margin: 0 0 12px; font-size: 15px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .sub { color: var(--muted); margin: 0; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  form { display: flex; flex-direction: column; gap: 12px; }
+  .row { display: flex; gap: 8px; }
+  @media (max-width: 600px) { .row { flex-direction: column; } }
+  input[type=text], select, textarea { padding: 9px 11px; font: inherit; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  input[type=text] { flex: 1; min-width: 0; }
+  button { padding: 9px 16px; font: inherit; font-weight: 600; border: 0; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); font-weight: 500; }
+  button:disabled { opacity: .6; cursor: wait; }
+  .opts { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font-size: 14px; align-items: center; }
+  .status { font-size: 14px; color: var(--muted); }
+  .err { color: var(--danger); white-space: pre-wrap; }
+
+  /* history */
+  .hist { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-y: auto; }
+  .hist li { padding: 9px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+  .hist li:hover { background: var(--bg); }
+  .hist li.active { border-color: var(--accent); background: var(--bg); }
+  .hist .src { font-size: 13px; font-weight: 600; word-break: break-all; }
+  .hist .when { font-size: 12px; color: var(--muted); }
+
+  /* summary */
+  .stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 4px; }
+  .stat { flex: 1; min-width: 110px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+  .stat.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .stat .n { font-size: 22px; font-weight: 700; }
+  .stat .l { font-size: 12px; color: var(--muted); }
+  .n.bad { color: var(--danger); } .n.good { color: var(--ok); } .n.warn { color: var(--warn); }
+  .meta { color: var(--muted); font-size: 13px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 14px 0; align-items: center; }
+
+  /* findings */
+  .finding { border-top: 1px solid var(--border); padding: 14px 0; }
+  .finding.dim { opacity: .55; }
+  .f-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .rule { font-weight: 600; }
+  .tag { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 99px; text-transform: uppercase; letter-spacing: .03em; }
+  .tag.new { background: var(--danger); color: #fff; }
+  .tag.fixed { background: var(--ok); color: #fff; }
+  .file { font-family: ui-monospace, Menlo, monospace; font-size: 13px; word-break: break-all; }
+  code, pre { font-family: ui-monospace, Menlo, monospace; font-size: 13px; background: var(--code); border-radius: 6px; }
+  code { padding: 1px 5px; }
+  pre { padding: 8px 10px; margin: 8px 0 0; overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 160px; }
+  .triage { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+  .triage select { padding: 5px 8px; font-size: 13px; }
+  .triage input { padding: 5px 8px; font-size: 13px; }
+  .s-confirmed { border-color: var(--danger) !important; color: var(--danger); }
+  .s-false_positive, .s-ignored { color: var(--muted); }
+  .s-fixed { border-color: var(--ok) !important; color: var(--ok); }
+  .s-risk_accepted { border-color: var(--warn) !important; color: var(--warn); }
+  .empty { padding: 30px 0; text-align: center; color: var(--muted); }
+
+  /* navigation */
+  .nav { display: flex; gap: 6px; margin-bottom: 14px; }
+  .nav button { padding: 6px 12px; font-size: 14px; }
+  .nav button:disabled { opacity: .4; cursor: default; }
+
+  /* unmask */
+  .u-btn { padding: 3px 10px; font-size: 12px; }
+  pre.revealed, code.revealed, .code.revealed { outline: 1px solid var(--danger); }
+  .code { margin: 8px 0 0; background: var(--code); border-radius: 6px; padding: 6px 0; overflow-x: auto;
+          font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.55; max-height: 420px; overflow-y: auto; }
+  .code .ln { display: flex; white-space: pre; padding-right: 10px; }
+  .code .ln.hit { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+  .code .no { flex: none; padding: 0 12px 0 10px; color: var(--muted); user-select: none; text-align: right; }
+  .code .ln.hit .no { color: var(--danger); font-weight: 700; }
+  .code mark { background: var(--danger); color: #fff; border-radius: 3px; padding: 0 2px; }
+  .reveal-warn { color: var(--danger); font-size: 12px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <header>
+    <nav class="nav">
+      <button type="button" class="ghost" id="navBack" title="Προηγούμενη σελίδα (Alt+←)">← Πίσω</button>
+      <button type="button" class="ghost" id="navFwd" title="Επόμενη σελίδα (Alt+→)">Μπροστά →</button>
+      <button type="button" class="ghost" id="navHome" title="Αρχική">⌂ Αρχική</button>
+    </nav>
+    <h1>🔐 Gitleaks Scanner</h1>
+    <p class="sub">Σκάναρε repositories για secrets, κράτα ιστορικό, μάρκαρε ευρήματα και δες τι άλλαξε από το προηγούμενο scan.</p>
+  </header>
+
+  <aside class="card">
+    <h2>Ιστορικό</h2>
+    <ul class="hist" id="hist"><li class="status">Φόρτωση…</li></ul>
+  </aside>
+
+  <section>
+    <div class="card">
+      <form id="form">
+        <div class="row">
+          <input type="text" id="source" placeholder="https://github.com/user/repo  ·  https://github.com/user  ·  /Users/εσύ/project" required>
+          <button id="btn" type="submit">Scan</button>
+        </div>
+        <div class="opts">
+          <label><input type="checkbox" id="fullHistory" checked> Όλο το ιστορικό commits</label>
+          <label><input type="checkbox" id="dirMode"> Μόνο τα τρέχοντα αρχεία</label>
+          <label title="Ένα ξένο repo μπορεί να απενεργοποιεί κανόνες μέσω .gitleaks.toml"><input type="checkbox" id="useRepoConfig"> Χρήση .gitleaks.toml του repo</label>
+          <label>Secrets:
+            <select id="mask">
+              <option value="partial">Μερική απόκρυψη (••••••ab12)</option>
+              <option value="full">Πλήρης απόκρυψη</option>
+            </select>
+          </label>
+        </div>
+        <div class="status" id="health">Έλεγχος εργαλείων…</div>
+      </form>
+    </div>
+
+    <div class="card" id="results" hidden></div>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const fmtDate = iso => new Date(iso).toLocaleString("el-GR", { dateStyle: "short", timeStyle: "short" });
+
+const STATUSES = {
+  pending: "Προς έλεγχο", confirmed: "Επιβεβαιωμένο", false_positive: "False positive",
+  ignored: "Αγνοείται", fixed: "Διορθώθηκε", risk_accepted: "Αποδεκτό ρίσκο"
+};
+const HIDDEN_BY_DEFAULT = new Set(["false_positive", "ignored"]);
+
+let current = null;               // το scan που βλέπουμε
+let view = "all";                 // all | new | fixed
+let hideDismissed = true;
+let query = "";
+
+fetch("/api/health").then(r => r.json()).then(h => {
+  $("health").textContent = h.gitleaks
+    ? `gitleaks ${h.gitleaks} · ${h.git ?? "git: δεν βρέθηκε"}`
+    : "⚠️ Δεν βρέθηκε το gitleaks: τρέξε brew install gitleaks";
+}).catch(() => $("health").textContent = "⚠️ Ο server δεν απαντά");
+
+// ---------- ιστορικό ----------
+async function loadHistory() {
+  const scans = await fetch("/api/scans").then(r => r.json());
+  $("hist").innerHTML = scans.length ? scans.map(s => `
+    <li data-id="${s.id}" class="${current?.scan.id === s.id ? "active" : ""}">
+      <div class="src">${esc(s.source.replace(/^https:\/\//, ""))}</div>
+      <div class="when">${fmtDate(s.startedAt)} · ${s.mode}${s.mode === "git" && !s.fullHistory ? " (shallow)" : ""} · <b>${s.count}</b> ευρήματα</div>
+    </li>`).join("") : `<li class="status">Κανένα scan ακόμα.</li>`;
+}
+$("hist").addEventListener("click", e => {
+  const li = e.target.closest("li[data-id]");
+  if (li) navigate(`#/scan/${li.dataset.id}`);
+});
+
+async function openScan(id) {
+  if (current?.scan.id !== id) {
+    const res = await fetch(`/api/scans/${id}`);
+    if (!res.ok) {
+      $("results").hidden = false;
+      $("results").innerHTML = `<div class="err">❌ Το scan #${id} δεν υπάρχει (ίσως διαγράφηκε).</div>`;
+      current = null; loadHistory();
+      return;
+    }
+    current = await res.json();
+    view = "all";
+  }
+  render();
+  loadHistory();
+}
+
+// ---------- πλοήγηση ----------
+// Κάθε "σελίδα" έχει δικό της URL (#/scan/7, #/user/όνομα), οπότε δουλεύουν τα κουμπιά
+// Πίσω/Μπροστά του app, του browser και τα gestures του trackpad.
+let navIdx = history.state?.idx ?? 0, navMax = navIdx;
+if (history.state?.idx == null) history.replaceState({ idx: 0 }, "", location.hash || "#/");
+
+function navigate(hash, replace = false) {
+  if (location.hash === hash) { route(); return; }
+  if (replace) history.replaceState({ idx: navIdx }, "", hash);
+  else { navIdx++; navMax = navIdx; history.pushState({ idx: navIdx }, "", hash); }
+  updateNav(); route();
+}
+window.addEventListener("popstate", e => { navIdx = e.state?.idx ?? 0; updateNav(); route(); });
+
+function updateNav() {
+  $("navBack").disabled = navIdx <= 0;
+  $("navFwd").disabled = navIdx >= navMax;
+}
+$("navBack").onclick = () => history.back();
+$("navFwd").onclick = () => history.forward();
+$("navHome").onclick = () => navigate("#/");
+
+function route() {
+  revealed.clear();
+  const h = location.hash;
+  let m;
+  if ((m = h.match(/^#\/scan\/(\d+)$/))) return openScan(+m[1]);
+  if ((m = h.match(/^#\/user\/([A-Za-z0-9-]+)$/))) return showRepoPicker(m[1]);
+  current = null;
+  $("results").hidden = true;
+  $("results").replaceChildren();
+  loadHistory();
+}
+
+// ---------- νέο scan ----------
+// URL προφίλ: https://github.com/όνομα (χωρίς repo)
+const PROFILE_RE = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([A-Za-z0-9][A-Za-z0-9-]{0,38})\/?$/i;
+
+$("form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const profile = $("source").value.trim().match(PROFILE_RE);
+  if (profile) return navigate(`#/user/${profile[1]}`);
+  const btn = $("btn"), out = $("results");
+  btn.disabled = true; btn.textContent = "Scanning…";
+  out.hidden = false; out.innerHTML = `<div class="status">⏳ Clone & scan σε εξέλιξη… (τα μεγάλα repos θέλουν λίγο χρόνο)</div>`;
+  try {
+    const res = await fetch("/api/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: $("source").value,
+        fullHistory: $("fullHistory").checked,
+        mode: $("dirMode").checked ? "dir" : null,
+        useRepoConfig: $("useRepoConfig").checked,
+        mask: $("mask").value
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || data.detail || "Άγνωστο σφάλμα");
+    current = data; view = "all";
+    navigate(`#/scan/${data.scan.id}`);
+  } catch (err) {
+    out.innerHTML = `<div class="err">❌ ${esc(err.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = "Scan";
+  }
+});
+
+// ---------- προβολή ----------
+function render() {
+  const out = $("results");
+  out.hidden = false;
+  const { scan, stats, previousScanId } = current;
+  const hasPrev = previousScanId != null;
+  const confirmed = current.findings.filter(f => f.triage.status === "confirmed").length;
+
+  out.innerHTML = `
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div>
+        <div style="font-weight:600;word-break:break-all">${esc(scan.source)}</div>
+        <div class="meta">Scan #${scan.id} · ${fmtDate(scan.startedAt)} · ${scan.mode}${scan.mode === "git" && !scan.fullHistory ? " (shallow)" : ""} · ${(scan.durationMs / 1000).toFixed(1)}s
+          ${hasPrev ? ` · σύγκριση με <a href="#" id="prevLink">scan #${previousScanId}</a>` : " · πρώτο scan για αυτό το repo"}</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:start">
+        <button class="ghost" id="rescan" title="Ξανατρέξε με τις ίδιες ρυθμίσεις">↻ Rescan</button>
+        <button class="ghost" id="dl">⬇ JSON</button>
+        <button class="ghost" id="del" title="Διαγραφή αυτού του scan">🗑</button>
+      </div>
+    </div>
+    <div class="stats">
+      ${statBox("all", stats.total, "Ευρήματα", stats.total ? "bad" : "good", `${stats.unique} μοναδικά`)}
+      ${hasPrev ? statBox("new", stats.new, "Νέα", stats.new ? "bad" : "good", "από το προηγούμενο") : ""}
+      ${hasPrev ? statBox("fixed", stats.fixed, "Διορθωμένα", stats.fixed ? "good" : "", "δεν υπάρχουν πια") : ""}
+      ${statBox("confirmed", confirmed, "Επιβεβαιωμένα", confirmed ? "bad" : "", "από το triage")}
+    </div>
+    <div class="toolbar">
+      <input type="text" id="filter" placeholder="Φίλτρο (αρχείο, κανόνας, author…)" value="${esc(query)}">
+      <label class="status"><input type="checkbox" id="hideDismissed" ${hideDismissed ? "checked" : ""}> Κρύψε false positives / αγνοημένα</label>
+    </div>
+    <div id="list"></div>`;
+
+  out.querySelectorAll(".stat").forEach(el => el.addEventListener("click", () => { view = el.dataset.view; render(); }));
+  $("filter").addEventListener("input", e => { query = e.target.value; renderList(); });
+  $("hideDismissed").addEventListener("change", e => { hideDismissed = e.target.checked; renderList(); });
+  $("prevLink")?.addEventListener("click", e => { e.preventDefault(); navigate(`#/scan/${previousScanId}`); });
+  $("dl").addEventListener("click", downloadJson);
+  $("del").addEventListener("click", deleteScan);
+  $("rescan").addEventListener("click", rescan);
+  renderList();
+}
+
+function statBox(key, n, label, cls, hint) {
+  return `<div class="stat ${view === key ? "active" : ""}" data-view="${key}">
+    <div class="n ${cls}">${n}</div><div class="l">${label} · ${hint}</div></div>`;
+}
+
+function renderList() {
+  const q = query.toLowerCase();
+  let items = view === "fixed" ? current.fixed
+            : view === "new" ? current.findings.filter(f => f.diff === "new")
+            : view === "confirmed" ? current.findings.filter(f => f.triage.status === "confirmed")
+            : current.findings;
+  const total = items.length;
+  if (q) items = items.filter(f => [f.ruleId, f.description, f.file, f.author, f.email, f.message, f.triage.note]
+    .some(v => (v || "").toLowerCase().includes(q)));
+  if (hideDismissed && view !== "fixed") items = items.filter(f => !HIDDEN_BY_DEFAULT.has(f.triage.status));
+  const hidden = total - items.length;
+
+  $("list").innerHTML = (items.map(findingHtml).join("") ||
+      `<div class="empty">${view === "fixed" ? "Τίποτα δεν διορθώθηκε από το προηγούμενο scan."
+        : total ? "Κανένα αποτέλεσμα με αυτά τα φίλτρα." : "✅ Καθαρό! Δεν βρέθηκαν secrets."}</div>`)
+    + (hidden ? `<div class="status" style="margin-top:10px">${hidden} κρυμμένα από τα φίλτρα.</div>` : "");
+}
+
+function findingHtml(f) {
+  const st = f.triage.status;
+  const canTriage = f.diff !== "fixed";
+  const rv = revealed.get(f.id);
+  return `
+    <div class="finding ${HIDDEN_BY_DEFAULT.has(st) ? "dim" : ""}" data-key="${esc(f.key)}">
+      <div class="f-head">
+        <span>
+          ${f.diff === "new" ? `<span class="tag new">Νέο</span> ` : ""}
+          ${f.diff === "fixed" ? `<span class="tag fixed">Διορθώθηκε</span> ` : ""}
+          <span class="rule">${esc(f.ruleId)}</span>
+        </span>
+        <span style="display:flex;gap:8px;align-items:center">
+          ${f.secretMasked ? (rv
+            ? `<code class="revealed">${esc(rv.secret)}</code>`
+            : `<code title="Μόνο οι τελευταίοι χαρακτήρες είναι ορατοί">${esc(f.secretMasked)}</code>`) : ""}
+          ${f.canUnmask
+            ? `<button type="button" class="ghost u-btn" data-id="${f.id}">${rv ? "🙈 Mask" : "👁 Unmask"}</button>`
+            : `<button type="button" class="ghost u-btn" disabled title="Scan πριν από την προσθήκη του unmask: κάνε rescan">👁 Unmask</button>`}
+        </span>
+      </div>
+      <div class="file">${f.link
+        ? `<a href="${esc(f.link)}" target="_blank" rel="noopener">${esc(f.file)}${f.startLine ? ":" + f.startLine : ""}</a>`
+        : `${esc(f.file)}${f.startLine ? ":" + f.startLine : ""}`}</div>
+      <div class="meta">${esc(f.description)}</div>
+      ${rv
+        ? `${codeHtml(f, rv)}<div class="reveal-warn">⚠️ Ορατό secret: μην το αφήνεις ανοιχτό σε κοινή οθόνη.</div>`
+        : `<pre>${esc(f.matchMasked)}</pre>`}
+      ${f.commit ? `<div class="meta" style="margin-top:6px">commit <code>${esc(f.commit.slice(0, 8))}</code> · ${esc(f.author)} &lt;${esc(f.email)}&gt; · ${esc((f.date || "").slice(0, 10))} · ${esc((f.message || "").split("\n")[0])}</div>` : ""}
+      ${canTriage ? `
+      <div class="triage">
+        <select class="t-status s-${st}">
+          ${Object.entries(STATUSES).map(([k, v]) => `<option value="${k}" ${k === st ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <input type="text" class="t-note" placeholder="Σημείωση…" value="${esc(f.triage.note)}" maxlength="2000" style="flex:1;min-width:160px">
+      </div>` : ""}
+    </div>`;
+}
+
+// Το triage αποθηκεύεται αμέσως και ισχύει για όλες τις εμφανίσεις του ίδιου secret
+// (ίδιο κλειδί) σε αυτό και σε κάθε μελλοντικό scan του repo.
+$("results").addEventListener("change", e => {
+  if (e.target.matches(".t-status, .t-note")) saveTriage(e.target.closest(".finding"));
+});
+
+// Ο κώδικας γύρω από το εύρημα, με αριθμούς γραμμών. Οι γραμμές του ευρήματος
+// επισημαίνονται και το secret γίνεται highlight.
+function codeHtml(f, rv) {
+  const ctx = rv.context;
+  if (!ctx?.lines?.length)
+    return `<pre class="revealed">${esc(rv.match)}</pre><div class="meta">Δεν ήταν διαθέσιμος ο κώδικας γύρω από το εύρημα (binary ή πολύ μεγάλο αρχείο).</div>`;
+  const end = Math.max(f.endLine, f.startLine);
+  const mark = line => {
+    if (!rv.secret) return esc(line);
+    return line.split(rv.secret).map(esc).join(`<mark>${esc(rv.secret)}</mark>`);
+  };
+  const width = String(ctx.start + ctx.lines.length - 1).length;
+  return `<div class="code revealed">${ctx.lines.map((l, i) => {
+    const n = ctx.start + i, hit = n >= f.startLine && n <= end;
+    return `<div class="ln${hit ? " hit" : ""}"><span class="no">${String(n).padStart(width)}</span><span class="tx">${mark(l) || " "}</span></div>`;
+  }).join("")}</div>`;
+}
+
+// ---------- unmask ----------
+// Τα αποκρυπτογραφημένα κρατιούνται μόνο στη μνήμη της σελίδας και σβήνονται
+// μόλις φύγεις από το scan.
+const revealed = new Map();
+
+$("results").addEventListener("click", async e => {
+  const btn = e.target.closest(".u-btn[data-id]");
+  if (!btn) return;
+  const id = +btn.dataset.id;
+  if (revealed.has(id)) { revealed.delete(id); renderList(); return; }
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/findings/${id}/reveal`, { cache: "no-store" });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || d.detail || "Αποτυχία");
+    revealed.set(id, d);
+    renderList();
+  } catch (err) {
+    alert(err.message);
+    btn.disabled = false;
+  }
+});
+
+async function saveTriage(el) {
+  const key = el.dataset.key;
+  const status = el.querySelector(".t-status").value;
+  const note = el.querySelector(".t-note").value;
+  const res = await fetch("/api/triage", {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source: current.scan.source, key, status, note })
+  });
+  if (!res.ok) { alert("Αποτυχία αποθήκευσης triage"); return; }
+  for (const f of current.findings) if (f.key === key) f.triage = { status, note };
+  render();
+}
+
+function downloadJson() {
+  const blob = new Blob([JSON.stringify(current, null, 2)], { type: "application/json" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `gitleaks-scan-${current.scan.id}.json` });
+  a.click();
+}
+
+async function deleteScan() {
+  if (!confirm(`Διαγραφή του scan #${current.scan.id}; Το triage των ευρημάτων κρατιέται.`)) return;
+  await fetch(`/api/scans/${current.scan.id}`, { method: "DELETE" });
+  current = null;
+  navigate("#/", true);   // replace: το "Πίσω" να μη γυρίζει σε διαγραμμένο scan
+}
+
+function rescan() {
+  const s = current.scan;
+  $("source").value = s.source;
+  $("dirMode").checked = s.mode === "dir";
+  $("fullHistory").checked = s.fullHistory;
+  $("mask").value = s.maskMode;
+  $("form").requestSubmit();
+}
+
+// ---------- όλα τα repos ενός χρήστη ----------
+// Κάθε λίστα κρατιέται ως DOM element: με το "Πίσω" από ένα scan ξαναβρίσκεις τη λίστα
+// ακριβώς όπως ήταν (επιλογές, αποτελέσματα), ακόμα κι αν τα scans τρέχουν ακόμα.
+const pickers = new Map();
+
+async function showRepoPicker(owner) {
+  const out = $("results");
+  out.hidden = false;
+  current = null;
+  loadHistory();
+  const key = owner.toLowerCase();
+  if (pickers.has(key)) { out.replaceChildren(pickers.get(key)); return; }
+
+  const el = document.createElement("div");
+  el.innerHTML = `<div class="status">⏳ Φόρτωση repositories του ${esc(owner)}…</div>`;
+  out.replaceChildren(el);
+
+  let repos;
+  try {
+    const res = await fetch(`/api/github/${encodeURIComponent(owner)}/repos`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || data.detail || "Αποτυχία");
+    repos = data;
+  } catch (err) {
+    el.innerHTML = `<div class="err">❌ ${esc(err.message)}</div>`;
+    return;   // δεν μπαίνει στο cache: το επόμενο άνοιγμα ξαναδοκιμάζει
+  }
+  pickers.set(key, el);
+  if (!repos.length) { el.innerHTML = `<div class="empty">Ο ${esc(owner)} δεν έχει δημόσια repositories.</div>`; return; }
+
+  el.innerHTML = `
+    <div style="font-weight:600">github.com/${esc(owner)}: ${repos.length} δημόσια repositories</div>
+    <div class="meta">Τα forks είναι αποεπιλεγμένα, γιατί συνήθως περιέχουν ξένο κώδικα.</div>
+    <div class="toolbar">
+      <button type="button" class="ghost p-all">Επιλογή όλων</button>
+      <button type="button" class="ghost p-none">Καμία</button>
+      <button type="button" class="p-scan">Scan επιλεγμένων</button>
+    </div>
+    <div class="p-list">${repos.map((r, i) => `
+      <label class="finding" style="display:flex;gap:10px;align-items:start;cursor:pointer">
+        <input type="checkbox" data-i="${i}" ${r.fork ? "" : "checked"} style="margin-top:4px">
+        <span style="flex:1">
+          <b>${esc(r.name)}</b>
+          ${r.fork ? `<span class="tag" style="border:1px solid var(--border)">fork</span>` : ""}
+          ${r.archived ? `<span class="tag" style="border:1px solid var(--border)">archived</span>` : ""}
+          <span class="meta"> · ${esc(r.language || "")} · ${(r.sizeKb / 1024).toFixed(1)} MB · ${r.pushedAt ? fmtDate(r.pushedAt) : ""}</span>
+          ${r.description ? `<div class="meta">${esc(r.description)}</div>` : ""}
+          <span class="r-result meta"></span>
+        </span>
+      </label>`).join("")}</div>`;
+
+  const boxes = () => [...el.querySelectorAll(".p-list input[type=checkbox]")];
+  el.querySelector(".p-all").onclick = () => boxes().forEach(b => b.checked = true);
+  el.querySelector(".p-none").onclick = () => boxes().forEach(b => b.checked = false);
+  el.querySelector(".p-scan").onclick = () => scanMany(el, repos, boxes().filter(b => b.checked));
+}
+
+// Ένα-ένα (όχι παράλληλα): κάθε scan κάνει clone και τρέχει gitleaks, και παράλληλα
+// clones θα φόρτωναν το δίκτυο και τον δίσκο χωρίς ουσιαστικό κέρδος.
+async function scanMany(el, repos, selected) {
+  if (!selected.length) return;
+  const btn = el.querySelector(".p-scan"), formBtn = $("btn");
+  btn.disabled = formBtn.disabled = true;
+  let total = 0, withLeaks = 0, failed = 0;
+  for (const [n, box] of selected.entries()) {
+    const repo = repos[+box.dataset.i];
+    const slot = box.closest("label").querySelector(".r-result");
+    btn.textContent = `Scanning ${n + 1}/${selected.length}…`;
+    slot.innerHTML = `<div>⏳ scanning…</div>`;
+    try {
+      const res = await fetch("/api/scan", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: repo.url, fullHistory: $("fullHistory").checked,
+          mode: $("dirMode").checked ? "dir" : null, useRepoConfig: $("useRepoConfig").checked, mask: $("mask").value
+        })
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || d.detail || "σφάλμα");
+      total += d.stats.total; if (d.stats.total) withLeaks++;
+      const extra = d.previousScanId != null ? ` (${d.stats.new} νέα, ${d.stats.fixed} διορθωμένα)` : "";
+      slot.innerHTML = `<div>${d.stats.total ? `🔴 <b>${d.stats.total}</b> ευρήματα${extra}` : "✅ καθαρό"}
+        · <a href="#/scan/${d.scan.id}" data-scan="${d.scan.id}">άνοιγμα scan #${d.scan.id}</a></div>`;
+    } catch (err) {
+      failed++;
+      slot.innerHTML = `<div class="err">❌ ${esc(err.message)}</div>`;
+    }
+    loadHistory();
+  }
+  btn.disabled = formBtn.disabled = false;
+  btn.textContent = `✔ Ολοκληρώθηκε: ${withLeaks}/${selected.length} repos με secrets, ${total} ευρήματα${failed ? `, ${failed} απέτυχαν` : ""}`;
+}
+
+$("results").addEventListener("click", e => {
+  const a = e.target.closest("a[data-scan]");
+  if (a) { e.preventDefault(); navigate(`#/scan/${a.dataset.scan}`); }
+});
+
+// Alt+← / Alt+→ όπως στον browser
+document.addEventListener("keydown", e => {
+  if (!e.altKey || e.target.matches("input, textarea, select")) return;
+  if (e.key === "ArrowLeft") { e.preventDefault(); history.back(); }
+  if (e.key === "ArrowRight") { e.preventDefault(); history.forward(); }
+});
+
+updateNav();
+route();
+</script>
+</body>
+</html>
