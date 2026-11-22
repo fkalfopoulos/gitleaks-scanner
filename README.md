@@ -1,5 +1,7 @@
 # 🔐 Gitleaks Scanner
 
+[![CI](https://github.com/fkalfopoulos/gitleaks-scanner/actions/workflows/ci.yml/badge.svg)](https://github.com/fkalfopoulos/gitleaks-scanner/actions/workflows/ci.yml)
+
 Τοπικό web app (ASP.NET Core / C#) που σκανάρει Git repositories για secrets (API keys, tokens,
 κωδικούς) με το [gitleaks](https://github.com/gitleaks/gitleaks), κρατά ιστορικό και δείχνει τι
 άλλαξε από scan σε scan.
@@ -55,8 +57,29 @@ scans δεν θα έχουν πια unmask.
 
 | Αρχείο | Περιεχόμενο |
 | --- | --- |
-| `Program.cs` | API endpoints, clone, εκτέλεση gitleaks |
+| `Program.cs` | Ρυθμίσεις και εκκίνηση |
+| `Api.cs` | Τα HTTP endpoints |
+| `ScanService.cs` | Η διαδικασία ενός scan: clone, gitleaks, masking, αποθήκευση |
+| `ScanView.cs` | Προβολή scan: triage και σύγκριση με το προηγούμενο |
 | `Store.cs` | SQLite: scans, ευρήματα, triage |
 | `Secrets.cs` | Masking, HMAC, κρυπτογράφηση |
 | `CodeContext.cs` | Ανάγνωση του κώδικα γύρω από κάθε εύρημα |
+| `RepoUrl.cs`, `ProcessRunner.cs`, `Models.cs` | Βοηθητικά |
 | `wwwroot/index.html` | Το UI |
+| `tests/` | Unit tests (xUnit) |
+
+Κάθε method έχει XML documentation στα ελληνικά.
+
+## Tests
+
+```bash
+dotnet test tests/GitleaksScanner.Tests
+```
+
+Τα tests καλύπτουν το masking, την κρυπτογράφηση (λάθος κλειδί, αλλοιωμένα δεδομένα), την
+κανονικοποίηση URLs, την προστασία από path traversal και τη σύγκριση scans. Τρέχουν
+αυτόματα σε κάθε push μέσω GitHub Actions.
+
+## Άδεια
+
+[MIT](LICENSE)

@@ -1,13 +1,21 @@
 using Microsoft.Data.Sqlite;
 
-/// Αποθήκευση scans, ευρημάτων και triage σε SQLite.
-class Store(string dbPath)
+namespace GitleaksScanner;
+
+/// <summary>
+/// Αποθήκευση των scans, των ευρημάτων και του triage σε SQLite.
+/// </summary>
+/// <param name="dbPath">Η διαδρομή του αρχείου SQLite.</param>
+public class Store(string dbPath)
 {
+    /// <summary>Οι επιτρεπτές τιμές για το status του triage.</summary>
     public static readonly string[] TriageStatuses =
         ["pending", "confirmed", "false_positive", "ignored", "fixed", "risk_accepted"];
 
     readonly string _cs = new SqliteConnectionStringBuilder { DataSource = dbPath }.ToString();
 
+    /// <summary>Ανοίγει νέα σύνδεση με ενεργά foreign keys.</summary>
+    /// <returns>Μια ανοιχτή σύνδεση. Ο caller την κλείνει με <c>using</c>.</returns>
     SqliteConnection Open()
     {
         var c = new SqliteConnection(_cs);
@@ -16,12 +24,21 @@ class Store(string dbPath)
         return c;
     }
 
+    /// <summary>Εκτελεί μια SQL εντολή που δεν επιστρέφει δεδομένα.</summary>
+    /// <param name="c">Η σύνδεση.</param>
+    /// <param name="sql">Το SQL.</param>
+    /// <param name="ps">Οι παράμετροι.</param>
     static void Exec(SqliteConnection c, string sql, params (string, object?)[] ps)
     {
         using var cmd = Cmd(c, sql, ps);
         cmd.ExecuteNonQuery();
     }
 
+    /// <summary>Φτιάχνει SQL εντολή με παραμέτρους (ποτέ με string concatenation, για αποφυγή SQL injection).</summary>
+    /// <param name="c">Η σύνδεση.</param>
+    /// <param name="sql">Το SQL, με παραμέτρους της μορφής <c>$όνομα</c>.</param>
+    /// <param name="ps">Ζεύγη (όνομα, τιμή) για τις παραμέτρους.</param>
+    /// <returns>Η εντολή, έτοιμη για εκτέλεση.</returns>
     static SqliteCommand Cmd(SqliteConnection c, string sql, params (string, object?)[] ps)
     {
         var cmd = c.CreateCommand();
@@ -30,6 +47,7 @@ class Store(string dbPath)
         return cmd;
     }
 
+    /// <summary>Δημιουργεί τους πίνακες αν δεν υπάρχουν και προσθέτει στήλες που μπήκαν σε νεότερες εκδόσεις.</summary>
     public void Init()
     {
         using var c = Open();
@@ -76,14 +94,23 @@ class Store(string dbPath)
         AddColumn(c, "findings", "context_enc", "BLOB");
     }
 
-    // Η SQLite δεν έχει "ADD COLUMN IF NOT EXISTS": ελέγχουμε πρώτα αν υπάρχει η στήλη.
+    /// <summary>
+    /// Προσθέτει μια στήλη σε πίνακα, αν δεν υπάρχει ήδη (η SQLite δεν έχει "ADD COLUMN IF NOT EXISTS").
+    /// Έτσι μια παλιά βάση αναβαθμίζεται χωρίς να χαθούν δεδομένα.
+    /// </summary>
+    /// <param name="c">Η σύνδεση.</param>
+    /// <param name="table">Ο πίνακας (σταθερό όνομα από τον κώδικα, όχι από τον χρήστη).</param>
+    /// <param name="column">Η στήλη.</param>
+    /// <param name="type">Ο τύπος της στήλης.</param>
     static void AddColumn(SqliteConnection c, string table, string column, string type)
     {
         using var cmd = Cmd(c, $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = $n", ("$n", column));
         if ((long)cmd.ExecuteScalar()! == 0) Exec(c, $"ALTER TABLE {table} ADD COLUMN {column} {type}");
     }
 
-    /// Τα κρυπτογραφημένα secret/match ενός ευρήματος (μόνο για το unmask).
+    /// <summary>Επιστρέφει τα κρυπτογραφημένα secret, match και κώδικα ενός ευρήματος (μόνο για το unmask).</summary>
+    /// <param name="findingId">Το id του ευρήματος.</param>
+    /// <returns>Τα κρυπτογραφημένα δεδομένα, ή <c>null</c> αν δεν υπάρχει το εύρημα.</returns>
     public (byte[]? Secret, byte[]? Match, byte[]? Context)? GetEncrypted(long findingId)
     {
         using var c = Open();
@@ -94,6 +121,15 @@ class Store(string dbPath)
         return (B(0), B(1), B(2));
     }
 
+    /// <summary>Αποθηκεύει ένα scan και όλα τα ευρήματά του σε μία transaction (ή όλα ή τίποτα).</summary>
+    /// <param name="source">Το κανονικοποιημένο όνομα της πηγής.</param>
+    /// <param name="mode">"git" ή "dir".</param>
+    /// <param name="fullHistory">Αν σκαναρίστηκε όλο το ιστορικό.</param>
+    /// <param name="maskMode">"partial" ή "full".</param>
+    /// <param name="startedAt">Πότε ξεκίνησε.</param>
+    /// <param name="durationMs">Πόσο κράτησε.</param>
+    /// <param name="findings">Τα ευρήματα.</param>
+    /// <returns>Το id του νέου scan.</returns>
     public long SaveScan(string source, string mode, bool fullHistory, string maskMode,
         DateTime startedAt, long durationMs, IReadOnlyList<StoredFinding> findings)
     {
@@ -131,6 +167,9 @@ class Store(string dbPath)
         return scanId;
     }
 
+    /// <summary>Επιστρέφει τα πιο πρόσφατα scans.</summary>
+    /// <param name="limit">Το μέγιστο πλήθος.</param>
+    /// <returns>Τα scans, από το νεότερο στο παλαιότερο.</returns>
     public List<ScanInfo> ListScans(int limit = 200)
     {
         using var c = Open();
@@ -141,6 +180,9 @@ class Store(string dbPath)
         return list;
     }
 
+    /// <summary>Επιστρέφει τα στοιχεία ενός scan.</summary>
+    /// <param name="id">Το id του scan.</param>
+    /// <returns>Το scan, ή <c>null</c> αν δεν υπάρχει.</returns>
     public ScanInfo? GetScan(long id)
     {
         using var c = Open();
@@ -149,8 +191,13 @@ class Store(string dbPath)
         return r.Read() ? ReadScan(r) : null;
     }
 
-    /// Το προηγούμενο scan του ίδιου repo με τις ΙΔΙΕΣ ρυθμίσεις: αν συγκρίνεις ένα full-history
-    /// scan με ένα dir scan, τα μισά ευρήματα θα φαίνονταν ψευδώς "διορθωμένα".
+    /// <summary>Βρίσκει το προηγούμενο scan του ίδιου repo με τις ίδιες ρυθμίσεις, για σύγκριση.</summary>
+    /// <remarks>
+    /// Οι ρυθμίσεις πρέπει να είναι ίδιες: αν συγκρίνεις ένα full-history scan με ένα dir scan,
+    /// τα μισά ευρήματα θα φαίνονταν ψευδώς "διορθωμένα".
+    /// </remarks>
+    /// <param name="s">Το scan.</param>
+    /// <returns>Το id του προηγούμενου scan, ή <c>null</c> αν είναι το πρώτο.</returns>
     public long? PreviousScanId(ScanInfo s)
     {
         using var c = Open();
@@ -161,6 +208,9 @@ class Store(string dbPath)
         return cmd.ExecuteScalar() is long v ? v : null;
     }
 
+    /// <summary>Διαγράφει ένα scan και τα ευρήματά του (όχι το triage, που ανήκει στο repo).</summary>
+    /// <param name="id">Το id του scan.</param>
+    /// <returns><c>true</c> αν βρέθηκε και διαγράφηκε.</returns>
     public bool DeleteScan(long id)
     {
         using var c = Open();
@@ -168,6 +218,9 @@ class Store(string dbPath)
         return cmd.ExecuteNonQuery() > 0;
     }
 
+    /// <summary>Επιστρέφει τα ευρήματα ενός scan, χωρίς τα κρυπτογραφημένα δεδομένα.</summary>
+    /// <param name="scanId">Το id του scan.</param>
+    /// <returns>Τα ευρήματα.</returns>
     public List<StoredFinding> GetFindings(long scanId)
     {
         using var c = Open();
@@ -189,6 +242,9 @@ class Store(string dbPath)
         return list;
     }
 
+    /// <summary>Επιστρέφει το triage όλων των ευρημάτων ενός repo.</summary>
+    /// <param name="source">Το repo.</param>
+    /// <returns>Λεξικό κλειδί ευρήματος → (status, σημείωση).</returns>
     public Dictionary<string, (string Status, string Note)> GetTriage(string source)
     {
         using var c = Open();
@@ -199,6 +255,13 @@ class Store(string dbPath)
         return map;
     }
 
+    /// <summary>
+    /// Ορίζει το triage ενός ευρήματος. Αν επιστρέψει σε "pending" χωρίς σημείωση, η εγγραφή σβήνεται.
+    /// </summary>
+    /// <param name="source">Το repo.</param>
+    /// <param name="key">Το κλειδί του ευρήματος.</param>
+    /// <param name="status">Το νέο status.</param>
+    /// <param name="note">Η σημείωση.</param>
     public void SetTriage(string source, string key, string status, string note)
     {
         using var c = Open();
@@ -213,42 +276,78 @@ class Store(string dbPath)
             """, ("$s", source), ("$k", key), ("$st", status), ("$n", note), ("$t", DateTime.UtcNow.ToString("O")));
     }
 
+    /// <summary>Διαβάζει μια στήλη κειμένου που μπορεί να είναι NULL.</summary>
+    /// <param name="r">Ο reader.</param>
+    /// <param name="col">Το όνομα της στήλης.</param>
+    /// <returns>Η τιμή, ή <c>null</c>.</returns>
     static string? Str(SqliteDataReader r, string col)
     {
         var i = r.GetOrdinal(col);
         return r.IsDBNull(i) ? null : r.GetString(i);
     }
 
+    /// <summary>Μετατρέπει την τρέχουσα γραμμή του πίνακα scans σε <see cref="ScanInfo"/>.</summary>
+    /// <param name="r">Ο reader, τοποθετημένος σε μια γραμμή.</param>
+    /// <returns>Το scan.</returns>
     static ScanInfo ReadScan(SqliteDataReader r) => new(
         r.GetInt64(r.GetOrdinal("id")), r.GetString(r.GetOrdinal("source")), r.GetString(r.GetOrdinal("mode")),
         r.GetInt32(r.GetOrdinal("full_history")) == 1, r.GetString(r.GetOrdinal("mask_mode")),
         r.GetString(r.GetOrdinal("started_at")), r.GetInt64(r.GetOrdinal("duration_ms")), r.GetInt32(r.GetOrdinal("count")));
 }
 
-record ScanInfo(long Id, string Source, string Mode, bool FullHistory, string MaskMode,
+/// <summary>Τα στοιχεία ενός scan.</summary>
+/// <param name="Id">Το id.</param>
+/// <param name="Source">Το repo ή ο φάκελος.</param>
+/// <param name="Mode">"git" ή "dir".</param>
+/// <param name="FullHistory">Αν σκαναρίστηκε όλο το ιστορικό.</param>
+/// <param name="MaskMode">"partial" ή "full".</param>
+/// <param name="StartedAt">Πότε ξεκίνησε (ISO 8601, UTC).</param>
+/// <param name="DurationMs">Πόσο κράτησε.</param>
+/// <param name="Count">Πόσα ευρήματα βρέθηκαν.</param>
+public record ScanInfo(long Id, string Source, string Mode, bool FullHistory, string MaskMode,
     string StartedAt, long DurationMs, int Count);
 
-class StoredFinding
+/// <summary>Ένα εύρημα όπως αποθηκεύεται στη βάση. Δεν περιέχει ποτέ το raw secret σε αναγνώσιμη μορφή.</summary>
+public class StoredFinding
 {
+    /// <summary>Το id στη βάση.</summary>
     public long Id { get; set; }
+    /// <summary>Αν υπάρχουν κρυπτογραφημένα δεδομένα για unmask (όχι σε scans πριν από αυτή τη λειτουργία).</summary>
     public bool CanUnmask { get; set; }
-    // Μόνο κατά την αποθήκευση· δεν διαβάζονται ποτέ μαζί με τη λίστα.
+    /// <summary>Το secret, κρυπτογραφημένο. Μόνο κατά την αποθήκευση· δεν διαβάζεται μαζί με τη λίστα.</summary>
     public byte[]? SecretEnc { get; set; }
+    /// <summary>Το match, κρυπτογραφημένο. Μόνο κατά την αποθήκευση.</summary>
     public byte[]? MatchEnc { get; set; }
+    /// <summary>Ο κώδικας γύρω από το εύρημα, κρυπτογραφημένος. Μόνο κατά την αποθήκευση.</summary>
     public byte[]? ContextEnc { get; set; }
+    /// <summary>Το σταθερό κλειδί (βλ. <see cref="Secrets.Key"/>), κοινό για το ίδιο leak σε όλα τα scans.</summary>
     public string Key { get; set; } = "";
+    /// <summary>Ο κανόνας του gitleaks.</summary>
     public string? RuleId { get; set; }
+    /// <summary>Η περιγραφή του κανόνα.</summary>
     public string? Description { get; set; }
+    /// <summary>Το σχετικό path του αρχείου.</summary>
     public string? File { get; set; }
+    /// <summary>Η πρώτη γραμμή.</summary>
     public int StartLine { get; set; }
+    /// <summary>Η τελευταία γραμμή.</summary>
     public int EndLine { get; set; }
+    /// <summary>Το commit (μόνο σε git mode).</summary>
     public string? Commit { get; set; }
+    /// <summary>Ο συγγραφέας του commit.</summary>
     public string? Author { get; set; }
+    /// <summary>Το email του συγγραφέα.</summary>
     public string? Email { get; set; }
+    /// <summary>Η ημερομηνία του commit.</summary>
     public string? Date { get; set; }
+    /// <summary>Το μήνυμα του commit.</summary>
     public string? Message { get; set; }
+    /// <summary>Η εντροπία του secret.</summary>
     public double Entropy { get; set; }
+    /// <summary>Το secret με μερική ή πλήρη απόκρυψη.</summary>
     public string? SecretMasked { get; set; }
+    /// <summary>Το match με κρυμμένο το secret.</summary>
     public string? MatchMasked { get; set; }
+    /// <summary>Link προς το αρχείο στο GitHub/GitLab/Bitbucket, αν υπάρχει.</summary>
     public string? Link { get; set; }
 }
