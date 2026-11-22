@@ -1,4 +1,4 @@
-namespace GitleaksScanner;
+namespace GitleaksScanner.Domain;
 
 /// <summary>
 /// Βοηθητικές μέθοδοι για τα URLs των repositories.

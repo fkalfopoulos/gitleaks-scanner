@@ -1,17 +1,16 @@
-using System.Text.Json;
+using GitleaksScanner.Domain;
 
-namespace GitleaksScanner;
+namespace GitleaksScanner.Infrastructure.Git;
 
 /// <summary>
 /// Διαβάζει τις γραμμές κώδικα γύρω από ένα εύρημα, όσο υπάρχει ακόμα το clone.
 /// </summary>
 /// <remarks>
-/// Σε git mode τις παίρνει από το αρχείο ΣΤΟ commit του ευρήματος (μπορεί να έχει σβηστεί
-/// από τότε), σε dir mode από το αρχείο στον δίσκο.
+/// Αν δοθεί commit, τις παίρνει από το αρχείο ΣΤΟ commit του ευρήματος (μπορεί να έχει σβηστεί
+/// από τότε)· αλλιώς από το αρχείο στον δίσκο.
 /// </remarks>
 /// <param name="repoPath">Ο φάκελος του repo.</param>
-/// <param name="mode">"git" ή "dir".</param>
-public class CodeContext(string repoPath, string mode)
+public sealed class CodeSnippetReader(string repoPath)
 {
     const int Around = 4;              // γραμμές πριν και μετά
     const int MaxLines = 40;           // π.χ. ένα private key πιάνει πολλές γραμμές
@@ -20,11 +19,6 @@ public class CodeContext(string repoPath, string mode)
 
     readonly Dictionary<string, string[]?> _cache = [];
     readonly string _root = Path.GetFullPath(repoPath).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-
-    /// <summary>Ένα κομμάτι κώδικα.</summary>
-    /// <param name="Start">Ο αριθμός της πρώτης γραμμής.</param>
-    /// <param name="Lines">Οι γραμμές.</param>
-    public record Snippet(int Start, string[] Lines);
 
     /// <summary>
     /// Μετατρέπει ένα απόλυτο path μέσα στο repo σε σχετικό (π.χ. "src/config.py").
@@ -45,14 +39,14 @@ public class CodeContext(string repoPath, string mode)
 
     /// <summary>Επιστρέφει τις γραμμές γύρω από ένα εύρημα (±4, έως 40 συνολικά).</summary>
     /// <param name="relFile">Το σχετικό path του αρχείου.</param>
-    /// <param name="commit">Το commit του ευρήματος (μόνο σε git mode).</param>
+    /// <param name="commit">Το commit του ευρήματος, ή <c>null</c> για το αρχείο στον δίσκο.</param>
     /// <param name="startLine">Η πρώτη γραμμή του ευρήματος.</param>
     /// <param name="endLine">Η τελευταία γραμμή του ευρήματος.</param>
     /// <returns>Το κομμάτι κώδικα, ή <c>null</c> για binary/πολύ μεγάλα αρχεία ή άκυρες γραμμές.</returns>
-    public async Task<Snippet?> GetAsync(string relFile, string? commit, int startLine, int endLine)
+    public async Task<CodeSnippet?> GetAsync(string relFile, string? commit, int startLine, int endLine)
     {
         if (startLine <= 0 || relFile.Length == 0) return null;
-        var lines = await LoadAsync(relFile, mode == "git" ? commit : null);
+        var lines = await LoadAsync(relFile, commit);
         if (lines is null) return null;
 
         var end = Math.Max(endLine, startLine);
@@ -62,7 +56,7 @@ public class CodeContext(string repoPath, string mode)
         var slice = lines[(from - 1)..to]
             .Select(l => l.Length > MaxLineChars ? l[..MaxLineChars] + " …" : l)
             .ToArray();
-        return new Snippet(from, slice);
+        return new CodeSnippet(from, slice);
     }
 
     /// <summary>
@@ -98,13 +92,4 @@ public class CodeContext(string repoPath, string mode)
         var lines = text is null || text.Contains('\0') ? null : text.ReplaceLineEndings("\n").Split('\n');
         return _cache[cacheKey] = lines;
     }
-
-    /// <summary>Μετατρέπει ένα κομμάτι κώδικα σε JSON, για κρυπτογράφηση και αποθήκευση.</summary>
-    /// <param name="s">Το κομμάτι.</param>
-    /// <returns>Το JSON.</returns>
-    public static string Serialize(Snippet s) => JsonSerializer.Serialize(s);
-    /// <summary>Διαβάζει ένα κομμάτι κώδικα από JSON.</summary>
-    /// <param name="json">Το JSON, ή <c>null</c>.</param>
-    /// <returns>Το κομμάτι, ή <c>null</c>.</returns>
-    public static Snippet? Deserialize(string? json) => json is null ? null : JsonSerializer.Deserialize<Snippet>(json);
 }

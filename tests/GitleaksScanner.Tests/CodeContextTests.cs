@@ -1,3 +1,5 @@
+using GitleaksScanner.Infrastructure.Git;
+
 namespace GitleaksScanner.Tests;
 
 /// <summary>Tests για την ανάγνωση του κώδικα γύρω από ένα εύρημα.</summary>
@@ -27,7 +29,7 @@ public sealed class CodeContextTests : IDisposable
     [Fact]
     public void Relative_StripsRepoRoot()
     {
-        var ctx = new CodeContext(_root, "dir");
+        var ctx = new CodeSnippetReader(_root);
         Assert.Equal(Path.Combine("src", "app.py"), ctx.Relative(Path.Combine(_root, "src", "app.py")));
         Assert.Equal("src/app.py", ctx.Relative("src/app.py"));
     }
@@ -36,7 +38,7 @@ public sealed class CodeContextTests : IDisposable
     [Fact]
     public async Task GetAsync_ReturnsLinesAround()
     {
-        var snippet = await new CodeContext(_root, "dir").GetAsync(Path.Combine("src", "app.py"), null, 10, 10);
+        var snippet = await new CodeSnippetReader(_root).GetAsync(Path.Combine("src", "app.py"), null, 10, 10);
         Assert.NotNull(snippet);
         Assert.Equal(6, snippet.Start);
         Assert.Equal(9, snippet.Lines.Length);
@@ -47,7 +49,7 @@ public sealed class CodeContextTests : IDisposable
     [Fact]
     public async Task GetAsync_ClampsAtFileStart()
     {
-        var snippet = await new CodeContext(_root, "dir").GetAsync(Path.Combine("src", "app.py"), null, 2, 2);
+        var snippet = await new CodeSnippetReader(_root).GetAsync(Path.Combine("src", "app.py"), null, 2, 2);
         Assert.Equal(1, snippet!.Start);
         Assert.Equal("line 1", snippet.Lines[0]);
     }
@@ -60,21 +62,11 @@ public sealed class CodeContextTests : IDisposable
     public async Task GetAsync_RefusesPathTraversal()
     {
         var escape = Path.Combine("..", Path.GetFileName(_outside));
-        Assert.Null(await new CodeContext(_root, "dir").GetAsync(escape, null, 1, 1));
+        Assert.Null(await new CodeSnippetReader(_root).GetAsync(escape, null, 1, 1));
     }
 
     /// <summary>Ελέγχει ότι τα binary αρχεία δεν επιστρέφονται ως κώδικας.</summary>
     [Fact]
     public async Task GetAsync_SkipsBinaryFiles() =>
-        Assert.Null(await new CodeContext(_root, "dir").GetAsync("image.bin", null, 1, 1));
-
-    /// <summary>Ελέγχει ότι ένα κομμάτι κώδικα επιβιώνει τη μετατροπή σε JSON και πίσω.</summary>
-    [Fact]
-    public void Serialize_RoundTrips()
-    {
-        var s = new CodeContext.Snippet(3, ["a", "β"]);
-        var back = CodeContext.Deserialize(CodeContext.Serialize(s));
-        Assert.Equal(3, back!.Start);
-        Assert.Equal(["a", "β"], back.Lines);
-    }
+        Assert.Null(await new CodeSnippetReader(_root).GetAsync("image.bin", null, 1, 1));
 }

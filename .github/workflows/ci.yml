@@ -20,7 +20,7 @@ jobs:
 
       # -warnaserror: αν λείπει XML documentation από public member, το build αποτυγχάνει.
       - name: Build
-        run: dotnet build GitleaksScanner.csproj -warnaserror
+        run: dotnet build GitleaksScanner.slnx -warnaserror
 
       - name: Test
-        run: dotnet test tests/GitleaksScanner.Tests --logger "console;verbosity=normal"
+        run: dotnet test GitleaksScanner.slnx --logger "console;verbosity=normal"

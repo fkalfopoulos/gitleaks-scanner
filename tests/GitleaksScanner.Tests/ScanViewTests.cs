@@ -1,3 +1,5 @@
+using GitleaksScanner.Domain;
+
 namespace GitleaksScanner.Tests;
 
 /// <summary>Tests για τη σύγκριση δύο scans του Gitleaks Scanner.</summary>
@@ -13,7 +15,7 @@ public class ScanViewTests
     [Fact]
     public void Diff_FindsFixed()
     {
-        var (prevKeys, fixedList) = ScanView.Diff([F("a"), F("b")], [F("b"), F("c")]);
+        var (prevKeys, fixedList) = ScanComparison.Diff([F("a"), F("b")], [F("b"), F("c")]);
         Assert.Equal(["a", "b"], prevKeys.Order());
         Assert.Equal("a", Assert.Single(fixedList).Key);
     }
@@ -24,7 +26,7 @@ public class ScanViewTests
     [Fact]
     public void Diff_CountsEachLeakOnce()
     {
-        var (_, fixedList) = ScanView.Diff([F("a", "c1"), F("a", "c2"), F("a", "c3")], []);
+        var (_, fixedList) = ScanComparison.Diff([F("a", "c1"), F("a", "c2"), F("a", "c3")], []);
         Assert.Single(fixedList);
     }
 }

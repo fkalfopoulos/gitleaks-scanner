@@ -1,0 +1,10 @@
+<Project>
+  <!-- Κοινές ρυθμίσεις για όλα τα projects (layers και tests). -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- XML documentation: warning για κάθε public member χωρίς /// <summary> -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+</Project>

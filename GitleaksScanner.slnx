@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GitleaksScanner.Domain/GitleaksScanner.Domain.csproj" />
+    <Project Path="src/GitleaksScanner.Application/GitleaksScanner.Application.csproj" />
+    <Project Path="src/GitleaksScanner.Infrastructure/GitleaksScanner.Infrastructure.csproj" />
+    <Project Path="src/GitleaksScanner.Api/GitleaksScanner.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GitleaksScanner.Tests/GitleaksScanner.Tests.csproj" />
+  </Folder>
+</Solution>

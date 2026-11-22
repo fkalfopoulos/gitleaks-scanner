@@ -1,11 +1,11 @@
 using System.Diagnostics;
 
-namespace GitleaksScanner;
+namespace GitleaksScanner.Infrastructure.Git;
 
 /// <summary>
 /// Εκτελεί εξωτερικά προγράμματα (git, gitleaks) με ασφάλεια και χρονικό όριο.
 /// </summary>
-public static class ProcessRunner
+internal static class ProcessRunner
 {
     /// <summary>Το αποτέλεσμα μιας εκτέλεσης.</summary>
     /// <param name="ExitCode">Ο κωδικός εξόδου (0 = επιτυχία, −1 = το πρόγραμμα δεν βρέθηκε).</param>

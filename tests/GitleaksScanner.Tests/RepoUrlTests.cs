@@ -1,3 +1,5 @@
+using GitleaksScanner.Domain;
+
 namespace GitleaksScanner.Tests;
 
 /// <summary>Tests για την κανονικοποίηση των URLs των repositories.</summary>
